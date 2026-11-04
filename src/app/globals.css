@@ -1,0 +1,101 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #fdf9f1;
+  --foreground: #1c1c17;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  background-color: #fdf9f1;
+  color: #1c1c17;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 24;
+}
+
+.fill-icon {
+  font-variation-settings: 'FILL' 1, 'wght' 600, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Bayangan "coastal" bernuansa navy laut */
+.shadow-coastal-1 {
+  box-shadow: 0 1px 3px rgba(11, 58, 91, 0.05), 0 4px 12px rgba(11, 58, 91, 0.04);
+}
+
+.shadow-coastal-2 {
+  box-shadow: 0 4px 6px -1px rgba(11, 58, 91, 0.08), 0 10px 24px -3px rgba(11, 58, 91, 0.08);
+}
+
+.shadow-bottom-bar {
+  box-shadow: 0 -4px 16px rgba(11, 58, 91, 0.08);
+}
+
+.outdoor-sheet {
+  box-shadow: 0 -8px 28px rgba(11, 58, 91, 0.2);
+}
+
+/* Takik sobekan tiket digital boarding pass (SKILL §6.5) */
+.ticket-notch-l,
+.ticket-notch-r {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+  background-color: #FBF7EF;
+  z-index: 10;
+}
+
+.ticket-notch-l {
+  left: -12px;
+}
+
+.ticket-notch-r {
+  right: -12px;
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 16px);
+}
+
+/* Animasi laser pemindai tiket */
+@keyframes laserSweep {
+  0% {
+    top: 15%;
+    opacity: 0.3;
+  }
+  50% {
+    top: 85%;
+    opacity: 1;
+  }
+  100% {
+    top: 15%;
+    opacity: 0.3;
+  }
+}
+
+.animate-laser {
+  animation: laserSweep 2s ease-in-out infinite;
+}

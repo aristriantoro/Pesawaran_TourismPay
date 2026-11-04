@@ -1,0 +1,335 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 1. Pengguna & Autentikasi
+model User {
+  id           String     @id @default(uuid())
+  name         String
+  email        String     @unique
+  phone        String?
+  passwordHash String
+  status       String     @default("ACTIVE") // ACTIVE, INACTIVE, SUSPENDED
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  userRoles        UserRole[]
+  reservations     Reservation[]
+  cashTransactions CashTransaction[]
+  ticketScans      TicketScan[]
+  auditLogs        AuditLog[]
+
+  @@map("users")
+}
+
+// 2. Peran & Akses (RBAC)
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique // WISATAWAN, PETUGAS_DERMAGA, OPERATOR_KAPAL, PENGELOLA_BUMDES, ADMIN_PEMDA, AUDITOR
+  permissions String   // JSON string array of permission keys
+
+  userRoles UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  id         String    @id @default(uuid())
+  userId     String
+  roleId     String
+  providerId String?   // Scoped to specific provider
+
+  user     User      @relation(fields: [userId], references: [id])
+  role     Role      @relation(fields: [roleId], references: [id])
+  provider Provider? @relation(fields: [providerId], references: [id])
+
+  @@unique([userId, roleId, providerId])
+  @@map("user_roles")
+}
+
+// 3. Penyedia & Layanan Wisata
+model Provider {
+  id           String   @id @default(uuid())
+  name         String
+  providerType String   // BUMDES_DESTINASI, OPERATOR_KAPAL, PENGELOLA_HOMESTAY, ASOSIASI_UMKM
+  contact      String?
+  status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+
+  services         Service[]
+  userRoles        UserRole[]
+  cashTransactions CashTransaction[]
+  reconciliations  Reconciliation[]
+  settlements      Settlement[]
+
+  @@map("providers")
+}
+
+model Service {
+  id          String   @id @default(uuid())
+  providerId  String
+  name        String
+  serviceType String   // TIKET_MASUK, RETRIBUSI_KONSERVASI, SEWA_KAPAL, PAKET_SNORKELING, SEWA_ALAT
+  description String
+  location    String   @default("Dermaga Ketapang -> Pulau Pahawang")
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+
+  provider          Provider           @relation(fields: [providerId], references: [id])
+  servicePrices     ServicePrice[]
+  availabilitySlots AvailabilitySlot[]
+  reservationItems  ReservationItem[]
+
+  @@map("services")
+}
+
+model ServicePrice {
+  id         String    @id @default(uuid())
+  serviceId  String
+  price      Decimal
+  unit       String    // "ORANG", "UNIT", "KAMAR", "PERJALANAN"
+  validFrom  DateTime
+  validUntil DateTime?
+  createdAt  DateTime  @default(now())
+
+  service Service @relation(fields: [serviceId], references: [id])
+
+  @@map("service_prices")
+}
+
+model AvailabilitySlot {
+  id            String   @id @default(uuid())
+  serviceId     String
+  serviceDate   String   // "YYYY-MM-DD"
+  capacity      Int
+  reservedCount Int      @default(0)
+
+  service Service @relation(fields: [serviceId], references: [id])
+
+  @@unique([serviceId, serviceDate])
+  @@map("availability_slots")
+}
+
+// 4. Reservasi & Pesanan
+model Reservation {
+  id              String   @id @default(uuid())
+  reservationCode String   @unique // "PHW-YYYYMMDD-NNNN"
+  customerId      String?
+  customerName    String
+  customerPhone   String
+  serviceDate     String   // "YYYY-MM-DD"
+  totalAmount     Decimal
+  status          String   @default("PENDING_PAYMENT") // PENDING_PAYMENT, CONFIRMED, CANCELLED, EXPIRED
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  customer         User?             @relation(fields: [customerId], references: [id])
+  reservationItems ReservationItem[]
+  payments         Payment[]
+  tickets          Ticket[]
+  cashTransactions CashTransaction[]
+
+  @@map("reservations")
+}
+
+model ReservationItem {
+  id            String  @id @default(uuid())
+  reservationId String
+  serviceId     String
+  providerId    String
+  quantity      Int
+  unitPrice     Decimal // Snapshot harga pada saat pemesanan
+  subtotal      Decimal
+
+  reservation Reservation @relation(fields: [reservationId], references: [id])
+  service     Service     @relation(fields: [serviceId], references: [id])
+
+  @@map("reservation_items")
+}
+
+// 5. Pembayaran & Settlement
+model Payment {
+  id                String    @id @default(uuid())
+  reservationId     String
+  method            String    // QRIS, CASH
+  providerReference String?   @unique
+  amount            Decimal
+  status            String    @default("PENDING") // PENDING, PAID, FAILED, EXPIRED, PAYMENT_UNKNOWN
+  paidAt            DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  reservation Reservation  @relation(fields: [reservationId], references: [id])
+  refunds     Refund[]
+  settlements Settlement[]
+
+  @@map("payments")
+}
+
+model Settlement {
+  id               String   @id @default(uuid())
+  providerId       String
+  paymentId        String?
+  paymentReference String?
+  settlementAmount Decimal
+  settledAt        DateTime
+  status           String   @default("SETTLED") // SETTLED, PENDING, DISPUTED
+
+  provider Provider @relation(fields: [providerId], references: [id])
+  payment  Payment? @relation(fields: [paymentId], references: [id])
+
+  @@map("settlements")
+}
+
+// 6. Tiket Digital & Pemindaian
+model Ticket {
+  id              String    @id @default(uuid())
+  reservationId   String
+  ticketCode      String    @unique // "TKT-PHW-YYYYMMDD-NNNN"
+  ticketTokenHash String    @unique // SHA-256 random token
+  validDate       String    // "YYYY-MM-DD"
+  status          String    @default("ACTIVE") // ACTIVE, USED, CANCELLED, EXPIRED
+  passengerCount  Int       @default(1)
+  usedAt          DateTime?
+  cancelledAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  reservation Reservation  @relation(fields: [reservationId], references: [id])
+  ticketScans TicketScan[]
+
+  @@map("tickets")
+}
+
+model TicketScan {
+  id          String   @id @default(uuid())
+  ticketId    String
+  staffUserId String
+  deviceId    String
+  scannedAt   DateTime
+  result      String   // VALID, ALREADY_USED, INVALID
+  syncStatus  String   @default("SYNCED") // SYNCED, PENDING_SYNC, CONFLICT
+  localId     String?  @unique
+
+  ticket Ticket @relation(fields: [ticketId], references: [id])
+  staff  User   @relation(fields: [staffUserId], references: [id])
+
+  @@map("ticket_scans")
+}
+
+// 7. Transaksi Tunai Petugas
+model CashTransaction {
+  id              String   @id @default(uuid())
+  transactionCode String   @unique // "TUN-YYYYMMDD-NNNN"
+  reservationId   String?
+  providerId      String
+  amount          Decimal
+  recordedById    String
+  recordedAt      DateTime @default(now())
+  status          String   @default("RECORDED") // RECORDED, DEPOSITED, VERIFIED, CONFLICT
+  localEventId    String?  @unique
+  notes           String?
+
+  reservation Reservation? @relation(fields: [reservationId], references: [id])
+  provider    Provider     @relation(fields: [providerId], references: [id])
+  recordedBy  User         @relation(fields: [recordedById], references: [id])
+
+  @@map("cash_transactions")
+}
+
+// 8. Pengembalian Dana (Refund)
+model Refund {
+  id          String    @id @default(uuid())
+  paymentId   String
+  amount      Decimal
+  reason      String
+  status      String    @default("PENDING") // PENDING, APPROVED, REJECTED, PROCESSED
+  processedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id])
+
+  @@map("refunds")
+}
+
+// 9. Rekonsiliasi & Pendapatan Daerah
+model Reconciliation {
+  id                 String   @id @default(uuid())
+  periodStart        DateTime
+  periodEnd          DateTime
+  providerId         String
+  expectedAmount     Decimal
+  actualAmount       Decimal
+  difference         Decimal
+  status             String   @default("MATCHED") // MATCHED, DISCREPANCY, UNDER_INVESTIGATION, RESOLVED
+  investigationNotes String?
+  actionStatus       String   @default("BELUM_DITINJAU") // BELUM_DITINJAU, DIPROSES, SELESAI
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id])
+
+  @@map("reconciliations")
+}
+
+model RevenueCategory {
+  id                  String   @id @default(uuid())
+  name                String
+  revenueType         String   // RETRIBUSI_PAD, JASA_USAHA_MITRA, BAGI_HASIL
+  legalBasisReference String
+  status              String   @default("ACTIVE")
+
+  revenueRecords RevenueRecord[]
+
+  @@map("revenue_categories")
+}
+
+model RevenueRecord {
+  id                 String   @id @default(uuid())
+  sourceReference    String
+  categoryId         String
+  grossAmount        Decimal
+  adjustmentAmount   Decimal  @default(0)
+  netAmount          Decimal
+  verificationStatus String   @default("PENDING_VALIDATION") // UNVERIFIED, PENDING_VALIDATION, VERIFIED_PAD
+  createdAt          DateTime @default(now())
+
+  category RevenueCategory @relation(fields: [categoryId], references: [id])
+
+  @@map("revenue_records")
+}
+
+// 10. Audit Trail & Antrean Sinkronisasi
+model AuditLog {
+  id          String   @id @default(uuid())
+  actorId     String?
+  action      String   // PRICE_UPDATE, TICKET_CANCEL, CASH_CORRECTION, TICKET_STATUS_OVERRIDE
+  entityType  String
+  entityId    String
+  beforeValue String?  // JSON serialized string
+  afterValue  String?  // JSON serialized string
+  createdAt   DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id])
+
+  @@map("audit_logs")
+}
+
+model SyncQueue {
+  id               String    @id @default(uuid())
+  deviceId         String
+  localEventId     String    @unique
+  eventType        String    // TICKET_SCAN, CASH_TRANSACTION
+  payloadReference String    // JSON string
+  syncStatus       String    @default("PENDING_SYNC") // PENDING_SYNC, SYNCED, CONFLICT
+  errorMessage     String?
+  createdAt        DateTime  @default(now())
+  syncedAt         DateTime?
+
+  @@map("sync_queue")
+}
